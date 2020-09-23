@@ -1535,10 +1535,10 @@ class InferenceModel:
         "importing agents information from Autonomous Vehicle (sim.agents)"
         self.frame = self.sim.frame
         curr_state_h = sim.agents[0].state[self.frame]
-        last_action_h = sim.agents[0].action[self.frame]
+        last_action_h = sim.agents[0].action[self.frame - 1]
         last_state_h = sim.agents[0].state[self.frame - 1]
         curr_state_m = sim.agents[1].state[self.frame]
-        last_action_m = sim.agents[1].action[self.frame]
+        last_action_m = sim.agents[1].action[self.frame - 1]
         last_state_m = sim.agents[1].state[self.frame - 1]
 
         self.traj_h.append([last_state_h, last_action_h])
@@ -1593,6 +1593,8 @@ class InferenceModel:
                     Q_m = q_set[5]
                 else:
                     print("ID FOR THETA DOES NOT EXIST")
+            else:
+                print("ID FOR THETA DOES NOT EXIST")
 
             "Need state for agent H: xH, vH, xM, vM"
             state_h = [-state_h[1], abs(state_h[3]), state_m[0], abs(state_m[2])]
@@ -1724,8 +1726,8 @@ class InferenceModel:
             # get all q pairs
             q_pairs = []
             "q_pairs (QH, QM): [[Q_na_na, Q_na_na2], [Q_na_a, Q_a_na], [Q_a_na, Q_na_a], [Q_a_a, Q_a_a2]]"
-            for t_m in self.theta_list:
-                for t_h in self.theta_list:
+            for t_h in self.theta_list:
+                for t_m in self.theta_list:
                     q_pairs.append(q_values_pair(state_h, state_m, t_h, t_m))  # [q_vals_h, q_vals_m]
 
             # Size of P(Q2|D) should be the size of possible Q2
@@ -1782,8 +1784,8 @@ class InferenceModel:
                 th = 1; tm = 1
             id = []
             "checking if given beta is a or na, in 1D betas:"
-            for i in index:  # (i, j) = (row, col). 8x8 2D array
-                if i < 4:  # NA
+            for i in index:  # (i, j) = (row, col). 4x4 2D array
+                if i < 2:  # NA  # TODO: generalize this
                     id.append(0)
                 else:  # A
                     id.append(1)
@@ -1822,6 +1824,7 @@ class InferenceModel:
                     #         p_beta_q2[i][j] = p_betas_prior[i][j] * p_q2_beta[k]
                     #     else:
                     #         p_beta_q2[i][j] += p_betas_prior[i][j] * p_q2_beta[k]
+            print(p_beta_q2)
             p_beta_q2 /= np.sum(p_beta_q2)
             # TODO: do they sum up to 1?
             # assert 0.99 <= np.sum(p_beta_q2) <= 1.01  # check if properly normalized
@@ -1863,6 +1866,7 @@ class InferenceModel:
             """
 
             actions = self.action_set
+
             def get_s_prime(_state_list, _actions):
                 _s_prime = []
 
@@ -1882,16 +1886,16 @@ class InferenceModel:
                 return _s_prime
 
             i = 0  # row counter
-            state_list = {}  # use dict to keep track of time step
+            _state_list = {}  # use dict to keep track of time step
             # state_list = []
             # state_list.append(state) #ADDING the current state!
             for t in range(0, T):
                 s_prime = get_s_prime(state, actions)  # separate pos and speed!
-                state_list[i] = s_prime
+                _state_list[i] = s_prime
                 # state_list.append(s_prime)
                 state = s_prime  # get s prime for the new states
                 i += 1  # move onto next row
-            return state_list
+            return _state_list
 
         def joint_action_prob(state_h, state_m, beta_h, beta_m):
             """
@@ -2133,6 +2137,7 @@ class InferenceModel:
         self.p_betas_prior = p_beta_d
 
         'getting best predicted betas'
+        # TODO: confirm if this works
         beta_pair_id = np.unravel_index(p_beta_d.argmax(), p_beta_d.shape)
         print("best betas ID at time {0}".format(self.frame), beta_pair_id)
 
@@ -2145,6 +2150,7 @@ class InferenceModel:
         p_beta_d_m, best_lambda_m = marginal_joint_intent(id=1, _p_beta_d=p_beta_d)
 
         "getting most likely action for analysis purpose"
+        # TODO: this is not correct: empathetic vs non-empathetic
         p_actions = action_prob(curr_state_h, curr_state_m, new_beta_h, new_beta_m)  # for testing with decision
         predicted_actions = []
         for i, p_a in enumerate(p_actions):
@@ -2153,18 +2159,6 @@ class InferenceModel:
             id = p_a.index(max(p_a))
             predicted_actions.append(self.action_set[id])
 
-        # TODO: IMPORTANT: Best beta pair =/= Best beta !!!
-        # TODO: implement proposed:
-        # variables:
-        # predicted_intent_other: BH hat,
-        # predicted_intent_self: BM tilde,
-        # predicted_policy_other: QH hat,
-        # predicted_policy_self: QM tilde
-
-        # p_theta_prime, suited_lambdas <- predicted_intent other
-        # p_betas: [BH x BM]
-        # print("state list and prob for H: ", state_list, marginal_state)
-        # print("size of state list at t=1", len(state_list[0]))  # should be 5x5 2D
         "obtaining marginal state distribution for both agents"
         marginal_state_h = {}
         marginal_state_m = {}
@@ -2175,6 +2169,16 @@ class InferenceModel:
             print(marginal_state[t])
             assert round(sum(marginal_state_m[t])) == 1 and round(sum(marginal_state_h[t])) == 1
 
+        # IMPORTANT: Best beta pair =/= Best beta !!!
+        # p_theta_prime, suited_lambdas <- predicted_intent other
+        # p_betas: [BH x BM]
+        # print("state list and prob for H: ", state_list, marginal_state)
+        # print("size of state list at t=1", len(state_list[0]))  # should be 5x5 2D
+        # variables:
+        # predicted_intent_other: BH hat,
+        # predicted_intent_self: BM tilde,
+        # predicted_policy_other: QH hat,
+        # predicted_policy_self: QM tilde
         print("-inf- marginal state for m: ", marginal_state_m)
         # print("-Intent_inf- marginal state H: ", marginal_state_h)
         return {'predicted_states_other': (marginal_state_h, get_state_list(curr_state_h, self.T, self.dt)),  # col of 2D should be H
