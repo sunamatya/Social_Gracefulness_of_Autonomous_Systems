@@ -637,7 +637,6 @@ class InferenceModel:
         #
         #
         #     pass
-
     def trained_baseline_inference(self, agent, sim):
         """
         Use Q function from nfsp models
@@ -1876,7 +1875,10 @@ class InferenceModel:
                     for a in _actions:
                         # print("STATE", s)
                         # _s_prime.append(calc_state(s, a, dt))
-                        _s_prime.append(dynamics.dynamics_1d(s, a, dt, self.min_speed, self.max_speed))
+                        if self.sim.env.name =="merger":
+                            _s_prime.append(dynamics.dynamics_2d(s, a, dt, self.min_speed, self.max_speed))
+                        else:
+                            _s_prime.append(dynamics.dynamics_1d(s, a, dt, self.min_speed, self.max_speed))
                 return _s_prime
 
             i = 0  # row counter
